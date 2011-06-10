@@ -14,7 +14,7 @@ class Server(object):
         self.modem.send_sms(number, msg)
         self.modem.wait_for_network()
           
-    def start(self):
+    def listen(self):
         while True:
             print "Checking for message..."
             msg = self.modem.next_message()
@@ -73,8 +73,8 @@ class DemoServer(Server):
     def __init__(self, modem):
         self.modem = modem
     
-#    def start(self):
-#        super(Server, self).start()
+#    def listen(self):
+#        super(Server, self).listen()
 #        self._run()
 #        
     def _run(self):
@@ -95,13 +95,13 @@ def main():
     print "Waiting for network..."
     s = gsm.wait_for_network()
     
-    # start the demo app
-#    app = Reminder(gsm, Scheduler(gsm))
-#    app.serve()
+    # listen the demo app
+    app = Reminder(gsm, Scheduler(gsm))
+    app.listen()
     
-    d = DemoServer(gsm)
-    #d.start()
-    d._run()
+#    d = DemoServer(gsm)
+    #d.listen()
+#    d._run()
     
     #gsm.send_sms('0245014728', 'Hello')
     #gsm.wait_for_network()
