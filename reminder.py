@@ -4,27 +4,35 @@
 
 import logging
 import traceback
+import random
 import time
 from kronos import method, ThreadedScheduler
 from utils import *
+
+import settings
+from django.core.management import setup_environ
+
+setup_environ(settings)
+
+from reminder.models import *
 
 from pygsm import GsmModem
 
 log = logging.getLogger("Reminder")
 
 
+
 class Gateway:
     """The Gateway itself."""
 
-    def __init__(self, modem):
+    def __init__(self, modem, interval=2):
         self.running = True
+        self.poll = True
         self.thread = None
-        
-#    def __init__(self, modem, scheduler):
         self.register = {}
         self.count = 0
         self.modem = modem
-#        self.scheduler = scheduler
+        self.interval = interval
 
     def _acquire_lock(self):
         pass
@@ -33,26 +41,38 @@ class Gateway:
         pass
 
     def handle(self, msg):
-        # check if sender in database
-        if msg.sender not in self.register:
-            #self.register.append(msg)
-            self.register[msg.sender] = msg
-            self.send(msg.sender, "Thanks for registering.")
+        sms = IncomingMessage(received_at=msg.received,
+                              sender=msg.sender,
+                              text=msg.text,
+                              network=network(msg.sender))
+        sms.save()
+
+        subject = Subject.objects.filter(phone_number=msg.sender)
+        
+        if not subject:
+            subject = Subject(phone_number=msg.sender,
+                              received_at=msg.received,
+                              messages_left=6)
+            if len(Subject.objects.all()) % 2 is 0:
+                subject.message_id = random.randint(0, 2)
+            subject.save()
             
-#            if self.count % 2 is 0:
-#                self.scheduler.add(msg)
-#            self.count += 1
-        elif msg.text.lower() is 'stop':
-            print 'OK OK we get it!'
-            #TODO
+            txt = "Thanks for registering."
+            self.send(msg.sender, txt)
+        elif msg.text.lower() is 'stop' and subject.active:
+            subject.active = False
+            subject.save()
+            msg.response('You have been removed from PACT')
         else:
-            msg.respond(('You are already registered. '
-                         'To stop receiving messages, text STOP. Thanks'))    
+            txt = ("You are already registered. "
+                   "To stop receiving messages, text STOP. Thanks.")
+            print txt
 
     def send(self, number, msg):
         self.modem.send_sms(number, msg)
-        return self.modem.wait_for_network()
-
+        s = self.modem.wait_for_network()
+        return s
+        
     def start(self):
         """Start the gateway."""
         self._run()
@@ -64,23 +84,24 @@ class Gateway:
     def _run(self):
         # Low-level run method to do the actual scheduling loop.
         while self.running:
-            try:
-                print "Checking for message..."
-                msg = self.modem.next_message()
-                if msg is not None:
-                    self.handle(msg)
-            except KeyboardInterrupt:
-                print "Ctrl-c received! Sending kill to threads..."
-                self.stop()
-            except Exception, x:
-                print >>sys.stderr, "ERROR DURING GATEWAY EXECUTION", x
-                print >>sys.stderr, "".join(
-                    traceback.format_exception(*sys.exc_info()))
-                print >>sys.stderr, "-" * 20
-            # queue is empty; sleep a short while before checking again
-#                self.modem.wait_for_network()
+            if self.poll:
+                try:
+                    print "Checking for message..."
+                    msg = self.modem.next_message()
+                    if msg is not None:
+                        self.handle(msg)
+                except KeyboardInterrupt:
+                    print "Ctrl-c received! Sending kill to threads..."
+                    self.stop()
+                except Exception, x:
+                    print >>sys.stderr, "ERROR DURING GATEWAY EXECUTION", x
+                    print >>sys.stderr, "".join(
+                        traceback.format_exception(*sys.exc_info()))
+                    print >>sys.stderr, "-" * 20
+                # queue is empty; sleep a short while before checking again
+    #                self.modem.wait_for_network()
             if self.running:
-                time.sleep(2)
+                time.sleep(self.interval)
 
 
 try:
@@ -122,70 +143,21 @@ except ImportError:
     pass
 
 
-class Server(object):
-    modem = None
-    
-    def handle(self, msg):
-        pass
-    
-    def listen(self):
-        while True:
-            print "Checking for message..."
-            msg = self.modem.next_message()
-
-            if msg is not None:
-                self.handle(msg)
-            time.sleep(2)
-
-
-class Scheduler(object):
-    
-    def __init__(self, modem):
-        self.q = []
-        self.modem = modem
-    
-    def poll(self):
-        pass
-    
-    def add(self, msg):
-        if int(msg._rawtime.split(':')[0]) < 17:
-            self.modem.send_sms(msg.sender, 'Reminder to take meds')
-            self.modem.wait_for_network()
-            self.q.append((msg.sender, 5))
-        else:
-            self.q.append((msg.sender, 6))
-
-
-subjects = [('0266688206', 0, 6), ('0548315007', 1, 6), ('0245206514', 2, 6)]
+subjects = [('0266688206', 0, 6)]
 #
 def broadcast(gateway):
     print 'Broadcasting ...'
-    
+    gateway.poll = False
     for subject in subjects:
         text = MESSAGES[subject[1]]
         print '>>> sending info: %s' % text
+        
         gateway.send(number=subject[0], msg=text)
 #        subject.messages_left -= 1
 #        subject.save()
-        print ">>  message sent: %s" % subject
+        print ">>  message sent: %s" % subject[0]
+    gateway.poll = True
 #
-#class DemoServer(Server):
-#    def __init__(self, modem):
-#        self.modem = modem
-#    
-##    def listen(self):
-##        super(Server, self).listen()
-##        self._run()
-##        
-#    def _run(self):
-#        
-#        import random
-#        for i in range(0, 3):
-#            for number in ['0263119161', '0245014728']:
-#                msg = 'Hello %s' % random.randint(0, 100)
-#                print 'Sending %s to %s' % (msg, number)
-#                self.send(number, msg)
-
 
 def main():
     port = '/dev/tty.HUAWEIMobile-Modem'
@@ -198,18 +170,10 @@ def main():
     # listen the demo app
     gateway = Gateway(modem)
     
-#    d = DemoServer(gsm)
-#    d.listen()
-#    d._run()
-    
-    #gsm.send_sms('0245014728', 'Hello')
-    #gsm.wait_for_network()
-    #gsm.send_sms('0245014728', 'wohoo')
-
     print "Listener setup"
 
     scheduler = ThreadedScheduler()
-    tx = [(17,19), (17, 20)]
+    tx = [(05,58), (05, 59)]
     for i in range(len(tx)):
         scheduler.add_daytime_task(action=broadcast, 
                                taskname="Action %s" % i, 
@@ -220,14 +184,6 @@ def main():
                                args=[gateway], kw=None)
     scheduler.start()
     gateway.start()
-    
-#    print "Scheduler started, waiting 15 sec...."
-#    time.sleep(15)
-#    
-#    print "STOP SCHEDULER"
-#    sched.stop()
-
-#    print "EXITING"
     
     
 if __name__ == "__main__":
