@@ -1,32 +1,35 @@
 #!/usr/bin/env python
 # vim: ai ts=4 sts=4 et sw=4
 
-import logging
+import time
+import sys
 import traceback
 import random
-import time
+
 from kronos import method, ThreadedScheduler
+from pygsm import GsmModem
 
 import settings
 from django.core.management import setup_environ
 setup_environ(settings)
 
 from reminder.models import *
-
-from pygsm import GsmModem
 from utils import *
 
+import logging
 log = logging.getLogger("Reminder")
+
+from datetime import date, timedelta
 
 
 class Gateway:
     """The Gateway itself."""
 
     def __init__(self, modem, interval=2):
-        self.running = True
-        self.poll = True
         self.modem = modem
         self.interval = interval
+        self.poll = True
+        self.running = True
 
     def handle(self, msg):
         sms = IncomingMessage(received_at=msg.received,
@@ -35,7 +38,7 @@ class Gateway:
                               network=network(msg.sender))
         sms.save()
 
-        subject = Subject.objects.filter(phone_number=msg.sender)
+        subject = Subject.objects.filter(phone_number=msg.sender).get()
         
         if not subject:
             subject = Subject(phone_number=msg.sender,
@@ -45,7 +48,7 @@ class Gateway:
                 subject.message_id = random.randint(0, 2)
             subject.save()            
             self.respond(msg, "Thanks for registering.")
-        elif msg.text.lower() is 'stop' and subject.active:
+        elif msg.text.lower().strip() == 'stop' and subject.active:
             subject.active = False
             subject.save()
             self.respond(msg, 
@@ -61,7 +64,8 @@ class Gateway:
     def send(self, number, text):
         log.debug('Sending: %s' % text)
         self.modem.send_sms(number, text)
-        return self.modem.wait_for_network()
+        s = self.modem.wait_for_network()
+        return s
         
     def start(self):
         """Start the gateway."""
@@ -81,7 +85,7 @@ class Gateway:
                     if msg is not None:
                         self.handle(msg)
                 except KeyboardInterrupt:
-                    print "Ctrl-c received! Sending kill to threads..."
+                    log.debug("Ctrl-c received! Sending kill to threads...")
                     self.stop()
                 except Exception, x:
                     print >>sys.stderr, "ERROR DURING GATEWAY EXECUTION", x
@@ -108,22 +112,40 @@ def main():
     scheduler = ThreadedScheduler()
 
     def send_reminder(gateway):
-        print 'Sending reminders ...'
+        log.debug('Sending reminders ...')
+        
+        # stop polling on the gateway for new messages
         gateway.poll = False
+        
         subjects = Subject.objects.filter(active=True).\
                                    filter(messages_left__isnull=False).\
                                    filter(messages_left__gt=0)
-                                           
         for subject in subjects:
             text = MESSAGES[subject.message_id]
-            print '>>> sending info: %s' % text
+            log.debug('>>> sending info: %s' % text)
             gateway.send(number=subject.phone_number, text=text)
             subject.messages_left -= 1
             subject.save()
-            print ">>  message sent: %s" % subject
-        print 'Done sending reminders.'
+            log.debug(">>  message sent: %s" % subject)
+        log.debug('Done sending reminders.')
+        # restart polling for new messages
         gateway.poll = True
             
+    def send_final_message(gateway):
+        log.debug('Sending final mesasge ...')
+        final_msg = 'Wohoo; that is your health tip ;)'
+        subjects = Subject.objects.filter(active=True).\
+                                   filter(messages_left=0)
+        today = datetime.today()
+        subjects = [x for x in subjects if (today - x.received_at).days == 5]
+        gateway.poll = False
+        for subject in subjects:                           
+            gateway.send(number=subject.phone_number, text=final_msg)
+            subject.active = False
+            subject.save()
+        gateway.poll = True
+        log.debug('Done sending final message.')
+    
     schedule = [(07, 12), (07, 15), (07, 20)]
     
     for t in schedule:
@@ -134,18 +156,19 @@ def main():
                                processmethod=method.threaded, 
                                timeonday=t,
                                args=[gateway], kw=None)
+    
+    scheduler.add_daytime_task(action=send_final_message, 
+                           taskname="Send Final Message", 
+                           weekdays=range(1,8),
+                           monthdays=None, 
+                           processmethod=method.threaded, 
+                           timeonday=(11, 20),
+                           args=[gateway], kw=None)
+    
     scheduler.start()
     gateway.start()
     
     
 if __name__ == "__main__":
-    import sys
     main()
     sys.exit(0)
-    
-
-
-
-
-
-
