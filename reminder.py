@@ -19,7 +19,7 @@ from utils import *
 import logging
 log = logging.getLogger("Reminder")
 
-from datetime import date, timedelta
+from datetime import datetime
 
 
 class Gateway:
@@ -38,7 +38,10 @@ class Gateway:
                               network=network(msg.sender))
         sms.save()
 
-        subject = Subject.objects.filter(phone_number=msg.sender).get()
+        subject = None
+        try:
+            subject = Subject.objects.filter(phone_number=msg.sender).get()
+        except: pass
         
         if not subject:
             subject = Subject(phone_number=msg.sender,
@@ -132,11 +135,16 @@ def main():
         gateway.poll = True
             
     def send_final_message(gateway):
+        print('This is a print statement in the final message')
         log.debug('Sending final mesasge ...')
         final_msg = 'Wohoo; that is your health tip ;)'
         subjects = Subject.objects.filter(active=True).\
                                    filter(messages_left=0)
         today = datetime.today()
+        xs = [(x, (today - x.received_at).days) for x in subjects]
+        
+        print '>>>> subject-days: %s' % xs
+        
         subjects = [x for x in subjects if (today - x.received_at).days == 5]
         gateway.poll = False
         for subject in subjects:                           
@@ -162,7 +170,7 @@ def main():
                            weekdays=range(1,8),
                            monthdays=None, 
                            processmethod=method.threaded, 
-                           timeonday=(11, 20),
+                           timeonday=(11, 40),
                            args=[gateway], kw=None)
     
     scheduler.start()
