@@ -14,7 +14,11 @@ MESSAGES = ['Praying that you feel better.  Please finish your malaria drugs.',
              'The malaria will survive if you do not take all of the pills.')]
 
 def network (phone_number):
-    xs = phone_number[:3]
+    if phone_number.startswith('+233'):
+        xs = '0%s' % phone_number[4:6]
+    else:
+        xs = phone_number[:3]
+    
     if xs:
         if xs == '026':
             return AIRTEL
