@@ -32,3 +32,13 @@ def network (phone_number):
             return EXPRESSO
     return 'Unknown'
 
+import logging
+def _logger(name, level=logging.DEBUG):
+    formatter = logging.Formatter('[%(name)s][%(levelname)s] %(message)s')
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+    log = logging.getLogger(name)
+    log.setLevel(level)
+    log.addHandler(handler)
+    return log
+

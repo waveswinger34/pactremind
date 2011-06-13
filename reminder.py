@@ -6,20 +6,29 @@ import sys
 import traceback
 import random
 
-from kronos import method, ThreadedScheduler
 from pygsm import GsmModem
+from datetime import datetime
+from kronos import method, ThreadedScheduler
 
 import settings
 from django.core.management import setup_environ
 setup_environ(settings)
 
-from reminder.models import *
+from reminder.models import Subject, IncomingMessage
 from utils import MESSAGES, network
 
 import logging
-log = logging.getLogger("Reminder")
+def _log(name, level=logging.DEBUG):
+    formatter = logging.Formatter('[%(name)s][%(levelname)s] %(message)s')
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+    log = logging.getLogger(name)
+    log.setLevel(level)
+    log.addHandler(handler)
+    return log
 
-from datetime import datetime
+log = _log('Reminder App')
+
 
 class PACT(object):
     def __init__(self):
@@ -76,7 +85,7 @@ class PACT(object):
         else:
             log.debug('>> %s has no reminders left' % subject)
 
-    def deacticate(self, subject, message=None):
+    def deactivate(self, subject, message=None):
         if not message:
             message = 'You will not receive any more messages from PACT'
         subject.active = False
@@ -161,38 +170,43 @@ class Gateway(object):
                 time.sleep(self.interval)
 
 
-def main():
-    #TODO: parse port from script arg
-    port = '/dev/tty.HUAWEIMobile-Modem'
+def bootstrap(options):
     logger = GsmModem.debug_logger
-    modem = GsmModem(port=port, logger=logger).boot()
+    modem = GsmModem(port=options.port or settings.SMS_MODEM_PORT,
+                     logger=logger).boot()
     
     log.debug("Waiting for network...")
-    tmp = modem.wait_for_network()
+    modem.wait_for_network()
+    
     app = PACT()
     gateway = Gateway(modem, app)
     
-    log.debug("Listener setup")
-
     scheduler = ThreadedScheduler()
-    schedule = [(07, 12), (07, 15), (07, 20)]
-    
-    for t in schedule:
-        scheduler.add_daytime_task(action=app.send_reminders, 
-                               taskname="Send Reminder", 
+    def add_task(taskname, action, timeonday):
+        scheduler.add_daytime_task(action=action, 
+                               taskname=taskname, 
                                weekdays=range(1,8),
                                monthdays=None, 
                                processmethod=method.threaded, 
-                               timeonday=t,
+                               timeonday=timeonday,
                                args=[], kw=None)
     
-    scheduler.add_daytime_task(action=app.send_final_messages, 
-                           taskname="Send Final Message", 
-                           weekdays=range(1,8),
-                           monthdays=None, 
-                           processmethod=method.threaded, 
-                           timeonday=(11, 40),
-                           args=[], kw=None)
+    for t in settings.SEND_REMINDERS_SCHEDULE:
+        add_task('Send Reminders', app.send_reminders, t)
+        
+    if settings.SEND_FINAL_MESSAGES_TIME:
+        add_task('Send Final Messages', app.send_final_messages,
+                 settings.SEND_FINAL_MESSAGES_TIME) 
+
+    return (gateway, scheduler,)
+
+def main():
+    import optparse
+    
+    p = optparse.OptionParser() 
+    p.add_option('--port', '-p', default=None) 
+    options, arguments = p.parse_args() 
+    gateway, scheduler = bootstrap(options)
     
     scheduler.start()
     gateway.start()
