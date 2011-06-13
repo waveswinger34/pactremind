@@ -14,56 +14,118 @@ from django.core.management import setup_environ
 setup_environ(settings)
 
 from reminder.models import *
-from utils import *
+from utils import MESSAGES, network
 
 import logging
 log = logging.getLogger("Reminder")
 
 from datetime import datetime
 
+class PACT(object):
+    def __init__(self):
+        self.gateway = None
+    
+    def handle(self, message):
+        sender = message.sender
+        text = message.text
+        
+        IncomingMessage(received_at=message.received,
+                        sender=sender,
+                        text=text,
+                        network=network(sender)).save()
 
-class Gateway:
+        try:
+            subject = Subject.objects.filter(phone_number=sender).get()
+        except:
+            subject = None
+        
+        if not subject:
+            self.register(sender, message.received)
+        elif subject.active and text.lower().startswith('stop'):
+            self.deactivate(subject)
+        else:
+            self.send(sender, 
+                      ('You are already registered. '
+                       'To stop receiving messages, text STOP. Thanks.'))
+
+    def register(self, phone_number, received_at=datetime.now()):
+        subject = Subject(phone_number=phone_number,
+                          received_at=received_at,
+                          messages_left=6)
+        if len(Subject.objects.all()) % 2 is 0:
+            subject.message_id = random.randint(0, len(MESSAGES) - 1)
+        else:
+            subject.messages_left = 0
+        subject.save()            
+        
+        self.send(phone_number, 'Thanks for registering.')
+        
+        today = datetime.today()
+        cutoff = datetime(today.year, today.month, today.day, 15)
+        if received_at < cutoff and subject.message_id:
+            self.send_reminder(subject)
+
+    def send_reminder(self, subject):
+        if subject.messages_left >= 1:
+            text = MESSAGES[subject.message_id]
+            log.debug('>>> sending info: %s' % text)
+            self.send(number=subject.phone_number, text=text)
+            subject.messages_left -= 1
+            subject.save()
+            log.debug(">>  message sent: %s" % subject)
+        else:
+            log.debug('>> %s has no reminders left' % subject)
+
+    def deacticate(self, subject, message=None):
+        if not message:
+            message = 'You will not receive any more messages from PACT'
+        subject.active = False
+        subject.save()
+        self.send(subject.phone_number, message)
+    
+    def send_reminders(self):
+        log.debug('Sending reminders ...')
+        self.poll_gateway(False)
+        subjects = Subject.objects.filter(active=True).\
+                                   filter(messages_left__isnull=False).\
+                                   filter(messages_left__gt=0)
+        for subject in subjects:
+            self.send_reminder(subject)
+        self.poll_gateway()
+        log.debug('Done sending reminders.')
+            
+    def send_final_messages(self):
+        log.debug('Sending final mesasge ...')
+        final_msg = 'Wohoo; that is your health tip ;)'
+        subjects = Subject.objects.filter(active=True).\
+                                   filter(messages_left=0)
+        today = datetime.today()
+        subjects = [x for x in subjects if (today - x.received_at).days == 5]
+        self.poll_gateway(False)
+        for subject in subjects:                           
+            self.deactivate(subject=subject, message=final_msg)
+        self.poll_gateway(True)
+        log.debug('Done sending final message.')
+    
+    def send(self, number, text): 
+        # TODO save outgoing message in db   
+        self.gateway.send(number, text)
+        
+    def poll_gateway(self, status=True):
+        self.gateway.poll = status
+
+        
+class Gateway(object):
     """The Gateway itself."""
 
-    def __init__(self, modem, interval=2):
+    def __init__(self, modem, app, interval=2):
         self.modem = modem
+        self.app = app
+        app.gateway = self
         self.interval = interval
         self.poll = True
         self.running = True
 
-    def handle(self, msg):
-        sms = IncomingMessage(received_at=msg.received,
-                              sender=msg.sender,
-                              text=msg.text,
-                              network=network(msg.sender))
-        sms.save()
-
-        subject = None
-        try:
-            subject = Subject.objects.filter(phone_number=msg.sender).get()
-        except: pass
-        
-        if not subject:
-            subject = Subject(phone_number=msg.sender,
-                              received_at=msg.received,
-                              messages_left=6)
-            if len(Subject.objects.all()) % 2 is 0:
-                subject.message_id = random.randint(0, 2)
-            subject.save()            
-            self.respond(msg, "Thanks for registering.")
-        elif msg.text.lower().strip() == 'stop' and subject.active:
-            subject.active = False
-            subject.save()
-            self.respond(msg, 
-                         'You will not receive any more messages from PACT')
-        else:
-            self.respond(msg, 
-                         ("You are already registered. "
-                          "To stop receiving messages, text STOP. Thanks."))
-
-    def respond(self, msg, text):
-        self.send(msg.sender, text)
-        
     def send(self, number, text):
         log.debug('Sending: %s' % text)
         self.modem.send_sms(number, text)
@@ -83,12 +145,12 @@ class Gateway:
         while self.running:
             if self.poll:
                 try:
-                    print "Checking for message..."
-                    msg = self.modem.next_message()
-                    if msg is not None:
-                        self.handle(msg)
+                    log.debug('Checking for next message...')
+                    message = self.modem.next_message()
+                    if message is not None:
+                        self.app.handle(message)
                 except KeyboardInterrupt:
-                    log.debug("Ctrl-c received! Sending kill to threads...")
+                    log.debug('Ctrl-c received! Sending kill signal ...')
                     self.stop()
                 except Exception, x:
                     print >>sys.stderr, "ERROR DURING GATEWAY EXECUTION", x
@@ -107,71 +169,30 @@ def main():
     
     log.debug("Waiting for network...")
     tmp = modem.wait_for_network()
-    
-    gateway = Gateway(modem)
+    app = PACT()
+    gateway = Gateway(modem, app)
     
     log.debug("Listener setup")
 
     scheduler = ThreadedScheduler()
-
-    def send_reminder(gateway):
-        log.debug('Sending reminders ...')
-        
-        # stop polling on the gateway for new messages
-        gateway.poll = False
-        
-        subjects = Subject.objects.filter(active=True).\
-                                   filter(messages_left__isnull=False).\
-                                   filter(messages_left__gt=0)
-        for subject in subjects:
-            text = MESSAGES[subject.message_id]
-            log.debug('>>> sending info: %s' % text)
-            gateway.send(number=subject.phone_number, text=text)
-            subject.messages_left -= 1
-            subject.save()
-            log.debug(">>  message sent: %s" % subject)
-        log.debug('Done sending reminders.')
-        # restart polling for new messages
-        gateway.poll = True
-            
-    def send_final_message(gateway):
-        print('This is a print statement in the final message')
-        log.debug('Sending final mesasge ...')
-        final_msg = 'Wohoo; that is your health tip ;)'
-        subjects = Subject.objects.filter(active=True).\
-                                   filter(messages_left=0)
-        today = datetime.today()
-        xs = [(x, (today - x.received_at).days) for x in subjects]
-        
-        print '>>>> subject-days: %s' % xs
-        
-        subjects = [x for x in subjects if (today - x.received_at).days == 5]
-        gateway.poll = False
-        for subject in subjects:                           
-            gateway.send(number=subject.phone_number, text=final_msg)
-            subject.active = False
-            subject.save()
-        gateway.poll = True
-        log.debug('Done sending final message.')
-    
     schedule = [(07, 12), (07, 15), (07, 20)]
     
     for t in schedule:
-        scheduler.add_daytime_task(action=send_reminder, 
+        scheduler.add_daytime_task(action=app.send_reminders, 
                                taskname="Send Reminder", 
                                weekdays=range(1,8),
                                monthdays=None, 
                                processmethod=method.threaded, 
                                timeonday=t,
-                               args=[gateway], kw=None)
+                               args=[], kw=None)
     
-    scheduler.add_daytime_task(action=send_final_message, 
+    scheduler.add_daytime_task(action=app.send_final_messages, 
                            taskname="Send Final Message", 
                            weekdays=range(1,8),
                            monthdays=None, 
                            processmethod=method.threaded, 
                            timeonday=(11, 40),
-                           args=[gateway], kw=None)
+                           args=[], kw=None)
     
     scheduler.start()
     gateway.start()
