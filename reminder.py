@@ -6,7 +6,7 @@ import sys
 import traceback
 import random
 
-from pygsm import GsmModem
+from gsm import Modem
 from datetime import datetime
 from kronos import method, ThreadedScheduler
 
@@ -130,6 +130,11 @@ class Gateway(object):
         self.modem.send_sms(number, text)
         s = self.modem.wait_for_network()
         return s
+    
+    def clear_read_messages(self):
+        self.poll = False
+        self.modem.clear_read_messages(True)
+        self.poll = True
         
     def start(self):
         """Start the gateway."""
@@ -161,8 +166,8 @@ class Gateway(object):
 
 
 def bootstrap(options):
-    logger = GsmModem.debug_logger
-    modem = GsmModem(port=options.port or settings.SMS_MODEM_PORT,
+    logger = Modem.debug_logger
+    modem = Modem(port=options.port or settings.SMS_MODEM_PORT,
                      logger=logger).boot()
     
     log.debug("Waiting for network...")
@@ -183,11 +188,18 @@ def bootstrap(options):
     
     for t in settings.SEND_REMINDERS_SCHEDULE:
         add_task('Send Reminders', app.send_reminders, t)
-        
     if settings.SEND_FINAL_MESSAGES_TIME:
         add_task('Send Final Messages', app.send_final_messages,
-                 settings.SEND_FINAL_MESSAGES_TIME) 
-
+                 settings.SEND_FINAL_MESSAGES_TIME)
+        
+    v = []
+    if options.clear_messages:
+        # format = 1,2|4,5
+        for xs in options.clear_messages.split('|'):
+            xs = xs.split(',')
+            v.append(tuple([int(x) for x in xs]))
+    for t in v or settings.CLEAR_READ_MESSAGES_SCHEDULE:
+        add_task('Clear read messages', gateway.clear_read_messages, t)
     return (gateway, scheduler,)
 
 def main():
@@ -195,6 +207,7 @@ def main():
     
     p = optparse.OptionParser() 
     p.add_option('--port', '-p', default=None) 
+    p.add_option('--clear_messages', '-c', default=None) 
     options, arguments = p.parse_args() 
     gateway, scheduler = bootstrap(options)
     
