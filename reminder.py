@@ -15,19 +15,9 @@ from django.core.management import setup_environ
 setup_environ(settings)
 
 from reminder.models import Subject, IncomingMessage
-from utils import MESSAGES, network
+from utils import MESSAGES, network, _logger
 
-import logging
-def _log(name, level=logging.DEBUG):
-    formatter = logging.Formatter('[%(name)s][%(levelname)s] %(message)s')
-    handler = logging.StreamHandler()
-    handler.setFormatter(formatter)
-    log = logging.getLogger(name)
-    log.setLevel(level)
-    log.addHandler(handler)
-    return log
-
-log = _log('Reminder App')
+log = _logger('Reminder App')
 
 
 class PACT(object):
