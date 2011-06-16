@@ -51,13 +51,15 @@ class PACT(object):
         subject = Subject(phone_number=phone_number,
                           received_at=received_at,
                           messages_left=6)
-        if len(Subject.objects.all()) % 2 is 0:
+#        if len(Subject.objects.all()) % 2 is 0:
+#        changed so that everyone is enrolled as getting messages
+        if len(Subject.objects.all()) % 2 >= 0:
             subject.message_id = random.randint(0, len(MESSAGES) - 1)
         else:
             subject.messages_left = 0
         subject.save()            
         
-        self.send(phone_number, 'Thanks for registering.')
+        self.send(phone_number, 'Thanks for registering for Mobile Health Information.')
         
         today = datetime.today()
         cutoff = datetime(today.year, today.month, today.day, 15)
@@ -77,7 +79,7 @@ class PACT(object):
 
     def deactivate(self, subject, message=None):
         if not message:
-            message = 'You will not receive any more messages from PACT'
+            message = 'You will not receive any more messages from Mobile Health'
         subject.active = False
         subject.save()
         self.send(subject.phone_number, message)
@@ -95,7 +97,7 @@ class PACT(object):
             
     def send_final_messages(self):
         log.debug('Sending final mesasge ...')
-        final_msg = 'Wohoo; that is your health tip ;)'
+        final_msg = 'Remember to eat lots of fruits and vegetables!'
         subjects = Subject.objects.filter(active=True).\
                                    filter(messages_left=0)
         today = datetime.today()
