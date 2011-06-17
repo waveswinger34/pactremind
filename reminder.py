@@ -21,8 +21,9 @@ log = _logger('Reminder App')
 
 
 class PACT(object):
-    def __init__(self):
+    def __init__(self, scheduler):
         self.gateway = None
+        self.scheduler = scheduler
     
     def handle(self, message):
         sender = message.sender
@@ -51,18 +52,27 @@ class PACT(object):
         subject = Subject(phone_number=phone_number,
                           received_at=received_at,
                           messages_left=6)
-        if len(Subject.objects.all()) % 2 is 0:
-            subject.message_id = random.randint(0, len(MESSAGES) - 1)
-        else:
-            subject.messages_left = 0
+#        if len(Subject.objects.all()) % 2 is 0:
+        # changed so everyone is enrolled as getting messages
+        subject.message_id = random.randint(0, len(MESSAGES) - 1)
+#        else:
+#            subject.messages_left = 0
         subject.save()            
-        
-        self.send(phone_number, 'Thanks for registering.')
-        
+        self.send(phone_number, 
+                  'Thanks for registering for Mobile Health Information.')
         today = datetime.today()
         cutoff = datetime(today.year, today.month, today.day, 15)
-        if received_at < cutoff and subject.message_id:
-            self.send_reminder(subject)
+        if received_at < cutoff: # and subject.message_id:
+            now  = datetime.now()
+            def send_reminder_in_15():
+                log.debug('Sending out task scheduled at: %s' % now)
+                self.send_reminder(subject)
+            self.scheduler.add_single_task(action=action,
+                                           initialdelay=900, # 15 * 60 secs
+                                           taskname='Send delayed first msg',
+                                           processmethod=method.threaded,
+                                           args=[], kw={})
+            
 
     def send_reminder(self, subject):
         if subject.messages_left >= 1:
@@ -77,7 +87,8 @@ class PACT(object):
 
     def deactivate(self, subject, message=None):
         if not message:
-            message = 'You will not receive any more messages from PACT'
+            message = ('You will not receive any more messages from '
+                       'Mobile Health')
         subject.active = False
         subject.save()
         self.send(subject.phone_number, message)
@@ -95,7 +106,7 @@ class PACT(object):
             
     def send_final_messages(self):
         log.debug('Sending final mesasge ...')
-        final_msg = 'Wohoo; that is your health tip ;)'
+        final_msg = 'Remember to eat lots of fruits and vegetables!'
         subjects = Subject.objects.filter(active=True).\
                                    filter(messages_left=0)
         today = datetime.today()
@@ -173,18 +184,18 @@ def bootstrap(options):
     log.debug("Waiting for network...")
     modem.wait_for_network()
     
-    app = PACT()
+    scheduler = ThreadedScheduler()
+    app = PACT(scheduler)
     gateway = Gateway(modem, app)
     
-    scheduler = ThreadedScheduler()
     def add_task(taskname, action, timeonday):
         scheduler.add_daytime_task(action=action, 
-                               taskname=taskname, 
-                               weekdays=range(1,8),
-                               monthdays=None, 
-                               processmethod=method.threaded, 
-                               timeonday=timeonday,
-                               args=[], kw=None)
+                                   taskname=taskname, 
+                                   weekdays=range(1,8),
+                                   monthdays=None, 
+                                   processmethod=method.threaded, 
+                                   timeonday=timeonday,
+                                   args=[], kw=None)
     
     for t in settings.SEND_REMINDERS_SCHEDULE:
         add_task('Send Reminders', app.send_reminders, t)
