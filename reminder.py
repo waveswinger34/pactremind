@@ -1,9 +1,7 @@
 #!/usr/bin/env python
 # vim: ai ts=4 sts=4 et sw=4
 
-import time
 import sys
-import traceback
 import random
 
 from gsm import Modem
@@ -68,7 +66,7 @@ class PACT(object):
             def send_reminder_in_15():
                 log.debug('Sending out task scheduled at: %s' % now)
                 self.send_reminder(subject)
-            self.scheduler.add_single_task(action=action,
+            self.scheduler.add_single_task(action=send_reminder_in_15,
                                            initialdelay=900, # 15 * 60 secs
                                            taskname='Send delayed first msg',
                                            processmethod=method.threaded,
