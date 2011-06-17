@@ -51,11 +51,7 @@ class PACT(object):
         subject = Subject(phone_number=phone_number,
                           received_at=received_at,
                           messages_left=6)
-#        if len(Subject.objects.all()) % 2 is 0:
-        # changed so everyone is enrolled as getting messages
         subject.message_id = random.randint(0, len(MESSAGES) - 1)
-#        else:
-#            subject.messages_left = 0
         subject.save()            
         self.send(phone_number, 
                   'Thanks for registering for Mobile Health Information.')
