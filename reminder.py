@@ -51,19 +51,20 @@ class PACT(object):
         subject = Subject(phone_number=phone_number,
                           received_at=received_at,
                           messages_left=6)
-        subject.message_id = random.randint(0, len(MESSAGES) - 1)
+        if len(Subject.objects.all()) % 2 is 3: #new
+            subject.message_id = random.randint(0, len(MESSAGES) - 1)
         subject.save()            
         self.send(phone_number, 
                   'Thanks for registering for Mobile Health Information.')
         today = datetime.today()
         cutoff = datetime(today.year, today.month, today.day, 15)
-        if received_at < cutoff: # and subject.message_id:
+        if received_at < cutoff and subject.message_id: #new after and
             now  = datetime.now()
             def send_reminder_in_15():
                 log.debug('Sending out task scheduled at: %s' % now)
                 self.send_reminder(subject)
             self.scheduler.add_single_task(action=send_reminder_in_15,
-                                           initialdelay=900, # 15 * 60 secs
+                                           initialdelay=900, # 15 * 60 secs=900
                                            taskname='Send delayed first msg',
                                            processmethod=method.threaded,
                                            args=[], kw={})
@@ -101,11 +102,11 @@ class PACT(object):
             
     def send_final_messages(self):
         log.debug('Sending final mesasge ...')
-        final_msg = 'Remember to eat lots of fruits and vegetables!'
+        final_msg = 'To prevent malaria, sleep under a mosquito net!'
         subjects = Subject.objects.filter(active=True).\
                                    filter(messages_left=0)
         today = datetime.today()
-        subjects = [x for x in subjects if (today - x.received_at).days == 5]
+        subjects = [x for x in subjects if (today - x.received_at).days == 2]
         self.poll_gateway(False)
         for subject in subjects:                           
             self.deactivate(subject=subject, message=final_msg)

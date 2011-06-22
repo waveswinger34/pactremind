@@ -19,7 +19,7 @@ DATABASES = {
 
 SMS_MODEM_PORT = '/dev/tty.HUAWEIMobile-Modem'
 SEND_REMINDERS_SCHEDULE = [(7,00), (19,00)]
-SEND_FINAL_MESSAGES_TIME = None
+SEND_FINAL_MESSAGES_TIME = (12,00)
 CLEAR_READ_MESSAGES_SCHEDULE = [(15,00), (20,00)]
 
 # Local time zone for this installation. Choices can be found here:
