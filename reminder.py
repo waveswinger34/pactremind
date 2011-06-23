@@ -4,8 +4,6 @@
 import sys
 import random
 
-from gsm import Modem
-from gsm import Gateway
 from datetime import datetime
 from kronos import method, ThreadedScheduler
 
@@ -19,34 +17,44 @@ from utils import MESSAGES, network, _logger
 log = _logger('Reminder App')
 
 
-class PACT(object):
-    def __init__(self, scheduler):
-        self.gateway = None
+class PACT (object):
+    def __init__(self, gateway, scheduler):
+        self.gateway = gateway
         self.scheduler = scheduler
+        gateway.add_handler(self)
     
-    def handle(self, message):
-        sender = message.sender
-        text = message.text
-        
-        IncomingMessage(received_at=message.received,
-                        sender=sender,
-                        text=text,
-                        network=network(sender)).save()
-
+    def handle_sms(self, message):
+        IncomingMessage(text=message.text,
+                        sender=message.sender, 
+                        received_at=message.received,
+                        network=network(message.sender)).save()
         try:
-            subject = Subject.objects.filter(phone_number=sender).get()
+            subject = Subject.objects.get(phone_number=message.sender)
         except:
             subject = None
         
         if not subject:
-            self.register(sender, message.received)
-        elif subject.active and text.lower().startswith('stop'):
+            self.register(message.sender, message.received)
+        elif subject.active and message.text.lower().startswith('stop'):
             self.deactivate(subject)
         else:
-            self.send(sender, 
+            self.send(message.sender, 
                       ('You are already registered. '
                        'To stop receiving messages, text STOP. Thanks.'))
-
+    
+    def handle_call(self, modem_id, caller, dt):
+        print 'We received a call on %s from %s at %s' % (modem_id, caller, dt)
+        try:
+            subject = Subject.objects.get(phone_number=caller)
+        except:
+            self.register(caller, dt)
+    
+    def handle_ussd_response(self, modem_id, response, code, dcs):
+        print '>>> USSD RESPONSE (%s): %s' % (modem_id, response)
+    
+    def send(self, *args, **kwargs): 
+        self.gateway.send(*args, **kwargs)
+        
     def register(self, phone_number, received_at=datetime.now()):
         subject = Subject(phone_number=phone_number,
                           received_at=received_at,
@@ -68,7 +76,6 @@ class PACT(object):
                                            taskname='Send delayed first msg',
                                            processmethod=method.threaded,
                                            args=[], kw={})
-            
 
     def send_reminder(self, subject):
         if subject.messages_left >= 1:
@@ -91,13 +98,11 @@ class PACT(object):
     
     def send_reminders(self):
         log.debug('Sending reminders ...')
-        self.poll_gateway(False)
         subjects = Subject.objects.filter(active=True).\
                                    filter(messages_left__isnull=False).\
                                    filter(messages_left__gt=0)
         for subject in subjects:
             self.send_reminder(subject)
-        self.poll_gateway()
         log.debug('Done sending reminders.')
             
     def send_final_messages(self):
@@ -106,32 +111,28 @@ class PACT(object):
         subjects = Subject.objects.filter(active=True).\
                                    filter(messages_left=0)
         today = datetime.today()
-        subjects = [x for x in subjects if (today - x.received_at).days == 2]
-        self.poll_gateway(False)
+        subjects = [x for x in subjects if (today - x.received_at).days == 5]
         for subject in subjects:                           
             self.deactivate(subject=subject, message=final_msg)
-        self.poll_gateway(True)
-        log.debug('Done sending final message.')
+        log.debug('Done sending final message.') 
     
-    def send(self, number, text): 
-        # TODO save outgoing message in db   
-        self.gateway.send(number, text)
-        
-    def poll_gateway(self, status=True):
-        self.gateway.poll = status
-
-
-def bootstrap(options):
-    logger = Modem.debug_logger
-    modem = Modem(port=options.port or settings.SMS_MODEM_PORT,
-                     logger=logger).boot()
+def main():
+    import optparse
     
-    log.debug("Waiting for network...")
-    modem.wait_for_network()
+    p = optparse.OptionParser() 
+    p.add_option('--port', '-p', default=None) 
+    p.add_option('--clear_messages', '-c', default=None) 
+    options, arguments = p.parse_args() 
     
+    modems, gateway = bootstrap(options)
+    scheduler = setup_app(gateway, options)
+    gateway.start()
+    scheduler.start()
+    
+    
+def setup_app(gateway, options):
     scheduler = ThreadedScheduler()
-    app = PACT(scheduler)
-    gateway = Gateway(modem, app)
+    app = PACT(gateway, scheduler)
     
     def add_task(taskname, action, timeonday):
         scheduler.add_daytime_task(action=action, 
@@ -156,20 +157,41 @@ def bootstrap(options):
             v.append(tuple([int(x) for x in xs]))
     for t in v or settings.CLEAR_READ_MESSAGES_SCHEDULE:
         add_task('Clear read messages', gateway.clear_read_messages, t)
-    return (gateway, scheduler,)
+    return scheduler
 
-def main():
-    import optparse
     
-    p = optparse.OptionParser() 
-    p.add_option('--port', '-p', default=None) 
-    p.add_option('--clear_messages', '-c', default=None) 
-    options, arguments = p.parse_args() 
-    gateway, scheduler = bootstrap(options)
-    
-    scheduler.start()
-    gateway.start()
-    
+
+from gsmio import Modem
+from gsmio import Gateway
+
+def bootstrap(options):
+    logger = Modem.debug_logger
+    modems = connect_modems(options)
+    gateway = Gateway(modems)
+    return (modems, gateway,)
+
+def connect_modems(options):
+    logger = Modem.debug_logger
+    d = {}
+    for id, data_port, control_port in get_modems(options):
+        modem = Modem(id=id,
+                      port=data_port,
+                      control_port=control_port,
+                      logger=logger).boot()
+        d.update({id:modem})
+    return d
+
+def get_modems(options, id1='Airtel', id2='MTN'):
+    import re
+    import os
+    modems = [(id1,
+               '/dev/cu.HUAWEIMobile-Modem',
+               '/dev/cu.HUAWEIMobile-Pcui',)]
+    xs = ['/dev/%s' % x for x in os.listdir('/dev/') \
+          if re.match(r'cu.HUAWEI.*-\d+', x)][:2]
+    if xs:
+        modems.append((id2, xs[0], xs[1]))
+    return modems
     
 if __name__ == "__main__":
     main()
