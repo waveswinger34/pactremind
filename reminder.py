@@ -75,7 +75,6 @@ class PACT (object):
                                            taskname='Send delayed first msg',
                                            processmethod=method.threaded,
                                            args=[], kw={})
-            
 
     def send_reminder(self, subject):
         if subject.messages_left >= 1:
@@ -161,8 +160,8 @@ def setup_app(gateway, options):
 
     
 
-from smsapp.gsm import Modem
-from smsapp.gsm import Gateway
+from gsmio import Modem
+from gsmio import Gateway
 
 def bootstrap(options):
     logger = Modem.debug_logger
