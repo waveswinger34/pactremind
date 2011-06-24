@@ -59,7 +59,7 @@ class PACT (object):
         subject = Subject(phone_number=phone_number,
                           received_at=received_at,
                           messages_left=6)
-        if len(Subject.objects.all()) % 2 is 3: #new
+        if len(Subject.objects.all()) % 2 >=0: #new
             subject.message_id = random.randint(0, len(MESSAGES) - 1)
         subject.save()            
         self.send(phone_number, 
@@ -101,19 +101,21 @@ class PACT (object):
         subjects = Subject.objects.filter(active=True).\
                                    filter(messages_left__isnull=False).\
                                    filter(messages_left__gt=0)
-        for subject in subjects:
+        for subject in [x for x in subjects if x.message_id is not None]:
             self.send_reminder(subject)
         log.debug('Done sending reminders.')
             
     def send_final_messages(self):
         log.debug('Sending final mesasge ...')
         final_msg = 'To prevent malaria, sleep under a mosquito net!'
-        subjects = Subject.objects.filter(active=True).\
-                                   filter(messages_left=0)
+        #subjects = Subject.objects.filter(active=True).\
+                                   #filter(messages_left=0)
+        subjects = Subject.objects.filter(active=True)
         today = datetime.today()
-        subjects = [x for x in subjects if (today - x.received_at).days == 5]
-        for subject in subjects:                           
-            self.deactivate(subject=subject, message=final_msg)
+        subjects = [x for x in subjects if (today - x.received_at).days == 2]
+        for subject in subjects: 
+            self.send(subject.phone_number, final_msg)                       
+            #self.deactivate(subject=subject, message=final_msg)
         log.debug('Done sending final message.') 
     
 def main():
