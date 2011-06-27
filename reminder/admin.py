@@ -13,10 +13,10 @@ class IncomingMessageAdmin(admin.ModelAdmin):
     list_display = ('sender', 'received_at', 'text', 'network',) 
 
 class SubjectAdmin(admin.ModelAdmin):
-    list_display = ('phone_number','message_id', 'messages_left', 'active',) 
-
+    list_display = ('received_at', 'phone_number','message_id', 
+                    'messages_left', 'active',) 
 
 
 admin.site.register(IncomingMessage, IncomingMessageAdmin)
-admin.site.register(Subject,SubjectAdmin)
+admin.site.register(Subject, SubjectAdmin)
 

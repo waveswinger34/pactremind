@@ -15,13 +15,12 @@ from reminder.models import Subject, IncomingMessage
 from utils import MESSAGES, network, _logger
 
 log = _logger('Reminder App')
+from simplesms import Handler
 
-
-class PACT (object):
+class PACT (Handler):
     def __init__(self, gateway, scheduler):
-        self.gateway = gateway
         self.scheduler = scheduler
-        gateway.add_handler(self)
+        Handler.__init__(self, gateway)
     
     def handle_sms(self, message):
         IncomingMessage(text=message.text,
@@ -43,18 +42,11 @@ class PACT (object):
                        'To stop receiving messages, text STOP. Thanks.'))
     
     def handle_call(self, modem_id, caller, dt):
-        print 'We received a call on %s from %s at %s' % (modem_id, caller, dt)
         try:
             subject = Subject.objects.get(phone_number=caller)
         except:
             self.register(caller, dt)
     
-    def handle_ussd_response(self, modem_id, response, code, dcs):
-        print '>>> USSD RESPONSE (%s): %s' % (modem_id, response)
-    
-    def send(self, *args, **kwargs): 
-        self.gateway.send(*args, **kwargs)
-        
     def register(self, phone_number, received_at=datetime.now()):
         subject = Subject(phone_number=phone_number,
                           received_at=received_at,
@@ -99,7 +91,7 @@ class PACT (object):
     def send_reminders(self):
         log.debug('Sending reminders ...')
         subjects = Subject.objects.filter(active=True).\
-                                   filter(messages_left__isnull=False).\
+                                   filter(message_id__isnull=False).\
                                    filter(messages_left__gt=0)
         for subject in [x for x in subjects if x.message_id is not None]:
             self.send_reminder(subject)
@@ -163,8 +155,8 @@ def setup_app(gateway, options):
 
     
 
-from gsmio import Modem
-from gsmio import Gateway
+from simplesms import Modem
+from simplesms import Gateway
 
 def bootstrap(options):
     logger = Modem.debug_logger
