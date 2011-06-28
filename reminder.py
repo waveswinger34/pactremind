@@ -115,12 +115,14 @@ def main():
     
     p = optparse.OptionParser() 
     p.add_option('--port', '-p', default=None) 
-    p.add_option('--clear_messages', '-c', default=None) 
+    p.add_option('--clear-messages', '-c', action='store_true', 
+                 dest='clear_messages', default=False) 
+    p.add_option('--clear-schedule', '-x', dest='clear_schedule', default=None) 
     options, arguments = p.parse_args() 
     
     modems, gateway = bootstrap(options)
     scheduler = setup_app(gateway, options)
-    gateway.start()
+    gateway.start(clear_messages=options.clear_messages)
     scheduler.start()
     
     
@@ -144,9 +146,9 @@ def setup_app(gateway, options):
                  settings.SEND_FINAL_MESSAGES_TIME)
         
     v = []
-    if options.clear_messages:
+    if options.clear_schedule:
         # format = 1,2|4,5
-        for xs in options.clear_messages.split('|'):
+        for xs in options.clear_schedule.split('|'):
             xs = xs.split(',')
             v.append(tuple([int(x) for x in xs]))
     for t in v or settings.CLEAR_READ_MESSAGES_SCHEDULE:
