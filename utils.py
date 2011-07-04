@@ -8,11 +8,6 @@ VODAFONE = 'Vodafone'
 TIGO = 'Tigo'
 EXPRESSO = 'Expresso'
 
-MESSAGES = ['Praying that you feel better.  Please finish your malaria drugs.',
-            'Please remember to take your malaria drugs.',
-            ('Please remember to take your malaria drugs. '
-             'The malaria will survive if you do not take all of the pills.')]
-
 def network (phone_number):
     if phone_number.startswith('+233'):
         xs = '0%s' % phone_number[4:6]

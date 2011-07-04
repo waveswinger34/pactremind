@@ -11,19 +11,15 @@ from kronos import method, ThreadedScheduler
 import settings
 from django.core.management import setup_environ
 setup_environ(settings)
-
 from reminder.models import Subject, IncomingMessage
-from utils import MESSAGES, network, _logger
+
+from utils import _logger
+
+from simplesms import Handler
+from simplesms.contrib.gh import network
+from simplesms.contrib.gh import sanitize_number
 
 log = _logger('Reminder App')
-from simplesms import Handler
-
-import phonenumbers
-
-
-def sanitize_number(number):
-    return phonenumbers.format_number(phonenumbers.parse(number, "GH"), 
-                                      phonenumbers.PhoneNumberFormat.E164)
 
 
 class PACT (Handler):
@@ -48,11 +44,9 @@ class PACT (Handler):
             self.deactivate(subject)
         else:
             self.send(message.sender, 
-                      ('You are already registered. '
-                       'To stop receiving messages, text STOP. Thanks.'))
+                      settings.ALREADY_REGISTERED_MESSAGE)
     
     def handle_call(self, modem_id, caller, dt):
-        # TODO: save registration date
         phone_number = sanitize_number(caller)
         try:
             subject = Subject.objects.get(phone_number=phone_number)
@@ -60,14 +54,17 @@ class PACT (Handler):
             self.register(phone_number, dt)
     
     def register(self, phone_number, received_at=datetime.now()):
+        if not phone_number.starts_with('+'):
+            phone_number = sanitize_number(phone_number)
         subject = Subject(phone_number=phone_number,
                           received_at=received_at,
                           messages_left=6)
         if len(Subject.objects.all()) % 2 >=0: #new
-            subject.message_id = random.randint(0, len(MESSAGES) - 1)
+            subject.message_id = random.randint(0, 
+                                                len(settings.MESSAGES) - 1)
         subject.save()            
         self.send(phone_number, 
-                  'Thanks for registering for Mobile Health Information.')
+                  settings.REGISTRATION_SUCCESS_MESSAGE)
         today = datetime.today()
         cutoff = datetime(today.year, today.month, today.day, 15)
         if received_at < cutoff and subject.message_id: #new after and
@@ -83,7 +80,7 @@ class PACT (Handler):
 
     def send_reminder(self, subject):
         if subject.messages_left >= 1:
-            text = MESSAGES[subject.message_id]
+            text = settings.MESSAGES[subject.message_id]
             log.debug('>>> sending info: %s' % text)
             self.send(number=subject.phone_number, text=text)
             subject.messages_left -= 1
@@ -92,13 +89,12 @@ class PACT (Handler):
         else:
             log.debug('>> %s has no reminders left' % subject)
 
-    def deactivate(self, subject, message=None):
-        if not message:
-            message = ('You will not receive any more messages from '
-                       'Mobile Health')
+    def deactivate(self, subject, 
+                   message=settings.DEFAULT_DEACTIVATION_MESSAGE):
         subject.active = False
         subject.save()
-        self.send(subject.phone_number, message)
+        if message:
+            self.send(subject.phone_number, message)
     
     def send_reminders(self):
         log.debug('Sending reminders ...')
@@ -111,15 +107,14 @@ class PACT (Handler):
             
     def send_final_messages(self):
         log.debug('Sending final mesasge ...')
-        final_msg = 'To prevent malaria, sleep under a mosquito net!'
         #subjects = Subject.objects.filter(active=True).\
                                    #filter(messages_left=0)
         subjects = Subject.objects.filter(active=True)
         today = datetime.today()
         subjects = [x for x in subjects if (today - x.received_at).days == 2]
         for subject in subjects: 
-            self.send(subject.phone_number, final_msg)                       
-            #self.deactivate(subject=subject, message=final_msg)
+            self.send(subject.phone_number, 
+                      settings.FINAL_MESSAGE)                       
         log.debug('Done sending final message.') 
     
 def main():

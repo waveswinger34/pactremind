@@ -18,10 +18,26 @@ DATABASES = {
 }
 
 SMS_MODEM_PORT = '/dev/tty.HUAWEIMobile-Modem'
+
 SEND_REMINDERS_SCHEDULE = [(8,02),(19,00)]
 SEND_FINAL_MESSAGES_TIME = (12,48)
 CLEAR_READ_MESSAGES_SCHEDULE = [(15,00), (20,00)]
 
+MESSAGES = ['Praying that you feel better.  Please finish your malaria drugs.',
+            'Please remember to take your malaria drugs.',
+            ('Please remember to take your malaria drugs. '
+             'The malaria will survive if you do not take all of the pills.')]
+
+REGISTRATION_SUCCESS_MESSAGE = ('Thanks for registering for '
+                                'Mobile Health Information.')
+
+ALREADY_REGISTERED_MESSAGE = ('You are already registered. '
+                              'To stop receiving messages, text STOP. Thanks.')
+
+FINAL_MESSAGE = 'To prevent malaria, sleep under a mosquito net!'
+
+DEFAULT_DEACTIVATION_MESSAGE = ('You will not receive any more '
+                                'messages from Mobile Health')
 # Local time zone for this installation. Choices can be found here:
 # http://en.wikipedia.org/wiki/List_of_tz_zones_by_name
 # although not all choices may be available on all operating systems.
