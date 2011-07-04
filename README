@@ -1,1 +1,13 @@
-Project PACT to improve adherence to malaria medecine through text messages to patients enrolled. 
+Project PACT to improve adherence to malaria medecine through text messages to 
+patients enrolled. 
+
+pactremind is an automated SMS-based reminder system, to help determine 
+whether -and which- text message reminders can increase the completion of ACTs 
+for treatment of presumptive malaria.
+
+The core functionality of the system allows participants to be enrolled/removed 
+from the study, randomly assigns participants to receive reminders (via SMS,) 
+and sends reminders to participants based on a schedule. The system also allows 
+reports to be created for text messages in CSV format. 
+
+The system has been developed using the Python programming language.

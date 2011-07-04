@@ -3,6 +3,7 @@
 
 import sys
 import random
+import time
 
 from datetime import datetime
 from kronos import method, ThreadedScheduler
@@ -17,23 +18,32 @@ from utils import MESSAGES, network, _logger
 log = _logger('Reminder App')
 from simplesms import Handler
 
+import phonenumbers
+
+
+def sanitize_number(number):
+    return phonenumbers.format_number(phonenumbers.parse(number, "GH"), 
+                                      phonenumbers.PhoneNumberFormat.E164)
+
+
 class PACT (Handler):
     def __init__(self, gateway, scheduler):
         self.scheduler = scheduler
         Handler.__init__(self, gateway)
     
     def handle_sms(self, message):
+        phone_number = sanitize_number(message.sender)
         IncomingMessage(text=message.text,
-                        sender=message.sender, 
+                        sender=phone_number, 
                         received_at=message.received,
                         network=network(message.sender)).save()
         try:
-            subject = Subject.objects.get(phone_number=message.sender)
+            subject = Subject.objects.get(phone_number=phone_number)
         except:
             subject = None
         
         if not subject:
-            self.register(message.sender, message.received)
+            self.register(phone_number, message.received)
         elif subject.active and message.text.lower().startswith('stop'):
             self.deactivate(subject)
         else:
@@ -42,10 +52,12 @@ class PACT (Handler):
                        'To stop receiving messages, text STOP. Thanks.'))
     
     def handle_call(self, modem_id, caller, dt):
+        # TODO: save registration date
+        phone_number = sanitize_number(caller)
         try:
-            subject = Subject.objects.get(phone_number=caller)
+            subject = Subject.objects.get(phone_number=phone_number)
         except:
-            self.register(caller, dt)
+            self.register(phone_number, dt)
     
     def register(self, phone_number, received_at=datetime.now()):
         subject = Subject(phone_number=phone_number,
@@ -159,6 +171,7 @@ def setup_app(gateway, options):
 
 from simplesms import Modem
 from simplesms import Gateway
+from pygsm import errors
 
 def bootstrap(options):
     logger = Modem.debug_logger
@@ -173,7 +186,14 @@ def connect_modems(options):
         modem = Modem(id=id,
                       port=data_port,
                       control_port=control_port,
-                      logger=logger).boot()
+                      logger=logger)
+        modem = modem.boot()
+#        try:
+#        except errors.GsmModemError:
+#            modem.connect()
+#            modem.command('AT+CFUN=0')
+#            time.sleep(4)
+#            modem.init()
         d.update({id:modem})
     return d
 
