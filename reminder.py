@@ -54,7 +54,7 @@ class PACT (Handler):
             self.register(phone_number, dt)
     
     def register(self, phone_number, received_at=datetime.now()):
-        if not phone_number.starts_with('+'):
+        if not phone_number.startswith('+'):
             phone_number = sanitize_number(phone_number)
         subject = Subject(phone_number=phone_number,
                           received_at=received_at,
