@@ -59,7 +59,7 @@ class PACT (Handler):
         subject = Subject(phone_number=phone_number,
                           received_at=received_at,
                           messages_left=6)
-        if len(Subject.objects.all()) % 2 >=0: #new
+        if len(Subject.objects.all()) % 2 ==0: #new
             subject.message_id = random.randint(0, 
                                                 len(settings.MESSAGES) - 1)
         subject.save()            
