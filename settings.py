@@ -19,14 +19,13 @@ DATABASES = {
 
 SMS_MODEM_PORT = '/dev/tty.HUAWEIMobile-Modem'
 
-SEND_REMINDERS_SCHEDULE = [(8,02),(19,00)]
+SEND_REMINDERS_SCHEDULE = [(8,00),(19,00)]
 SEND_FINAL_MESSAGES_TIME = (12,48)
 CLEAR_READ_MESSAGES_SCHEDULE = [(15,00), (20,00)]
 
-MESSAGES = ['Praying that you feel better.  Please finish your malaria drugs.',
-            'Please remember to take your malaria drugs.',
-            ('Please remember to take your malaria drugs. '
-             'The malaria will survive if you do not take all of the pills.')]
+MESSAGES = ['Please take your MALARIA drugs!',
+            ('Please take your MALARIA drugs! '
+             'Even if you feel better, you must take all the tablets to kill all the malaria.')]
 
 REGISTRATION_SUCCESS_MESSAGE = ('Thanks for registering for '
                                 'Mobile Health Information.')
